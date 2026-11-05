@@ -14,6 +14,8 @@ export interface Session {
   muted?: boolean;
   /** Season night on the leaderboard (null/absent = an unranked game). */
   nightId?: string | null;
+  /** Secret from the server that lets this screen post the night's results. */
+  nightToken?: string | null;
   /** Results for `nightId` were saved. */
   recorded?: boolean;
   updatedAt: number;

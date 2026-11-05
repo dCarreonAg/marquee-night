@@ -78,12 +78,11 @@ export interface Team {
   correct: number;
 }
 
-/** Someone signed in on their phone (a Clerk user). */
+/** Someone who joined from their phone with a name. */
 export interface Player {
-  /** Clerk user id. */
+  /** Random id the phone keeps, so a refresh or a new tab rejoins the same player. */
   id: string;
   name: string;
-  imageUrl?: string;
   teamId: string | null;
 }
 
@@ -159,7 +158,7 @@ export interface HistoryEntry {
 export interface GameState {
   game: GameFile;
   teams: Team[];
-  /** Signed-in players on their phones. Optional so older saved sessions load. */
+  /** Players who joined from their phones. Optional so older saved sessions load. */
   players?: Player[];
   /** Index into `teams` of the team whose turn it is to pick. */
   turn: number;
@@ -175,7 +174,7 @@ export type Action =
   | { type: "setTeams"; teams: { name: string; color: string }[] }
   | { type: "startGame" }
   | { type: "pickTile"; col: number; row: number }
-  | { type: "addPlayer"; player: { id: string; name: string; imageUrl?: string } }
+  | { type: "addPlayer"; player: { id: string; name: string } }
   | { type: "removePlayer"; playerId: string }
   | { type: "movePlayer"; playerId: string; teamId: string | null }
   /** `seed` comes from the sender so the reducer stays pure (and undo replays exactly). */

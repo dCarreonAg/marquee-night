@@ -21,14 +21,14 @@ export function PlayerScreen({
   room,
   live,
   ranked,
-  nightError,
+  onChangeName,
 }: {
   view: PlayerView;
   me: string;
   room: string;
   live: boolean;
   ranked: boolean;
-  nightError: string | null;
+  onChangeName: () => void;
 }) {
   const player = view.players.find((p) => p.id === me);
   const team = view.teams.find((t) => t.id === player?.teamId);
@@ -94,16 +94,17 @@ export function PlayerScreen({
         ))}
       </div>
 
-      {nightError && <p className="text-[13px] text-wrong-soft">Leaderboard: {nightError}</p>}
-      {!ranked && <p className="text-[13px] text-text-dim">This game isn&apos;t ranked: the host didn&apos;t sign in.</p>}
+      {!ranked && <p className="text-[13px] text-text-dim">This game doesn&apos;t count toward the season leaderboard.</p>}
 
       <div className="mt-2 flex justify-between text-[14px] font-semibold text-text-dim">
         <Link href="/leaderboard" className="underline">
           Season leaderboard
         </Link>
-        <Link href={`/host?room=${room}`} className="underline">
-          I&apos;m the host
-        </Link>
+        {view.phase.kind === "lobby" && (
+          <button type="button" onClick={onChangeName} className="underline">
+            Change name
+          </button>
+        )}
       </div>
     </div>
   );

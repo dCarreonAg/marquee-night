@@ -4,22 +4,37 @@ import type { GameState } from "@/lib/game";
 
 /** What the TV sends when a ranked night ends. The server works out the points. */
 export interface ResultsPayload {
-  teams: { name: string; score: number; correct: number; playerIds: string[] }[];
+  token: string;
+  teams: { name: string; score: number; correct: number; players: string[] }[];
 }
 
-export function resultsPayload(state: GameState): ResultsPayload {
+export function resultsPayload(state: GameState, token: string): ResultsPayload {
   return {
+    token,
     teams: state.teams.map((t) => ({
       name: t.name,
       score: t.score,
       correct: t.correct ?? 0,
-      playerIds: (state.players ?? []).filter((p) => p.teamId === t.id).map((p) => p.id),
+      players: (state.players ?? []).filter((p) => p.teamId === t.id).map((p) => p.name),
     })),
   };
 }
 
-/** Opens a season night for this game. Resolves to null when the leaderboard isn't available. */
-export async function createNight(title: string, roomCode: string): Promise<{ id: string } | { error: string }> {
+/** Whether this server can record season nights. */
+export async function leaderboardEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/nights");
+    return res.ok && (await res.json()).enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Opens a season night for this game. The token stays on this screen; results need it. */
+export async function createNight(
+  title: string,
+  roomCode: string,
+): Promise<{ id: string; token: string } | { error: string }> {
   try {
     const res = await fetch("/api/nights", {
       method: "POST",
@@ -28,30 +43,18 @@ export async function createNight(title: string, roomCode: string): Promise<{ id
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) return { error: body.error ?? "The leaderboard isn't available right now." };
-    return { id: body.id };
+    return { id: body.id, token: body.token };
   } catch {
     return { error: "The leaderboard isn't reachable." };
   }
 }
 
-/** Registers the signed-in player for a night (proves they were really here). */
-export async function joinNight(nightId: string): Promise<string | null> {
-  try {
-    const res = await fetch(`/api/nights/${encodeURIComponent(nightId)}/join`, { method: "POST" });
-    if (res.ok) return null;
-    const body = await res.json().catch(() => ({}));
-    return body.error ?? "Couldn't join the season night.";
-  } catch {
-    return "Couldn't reach the leaderboard.";
-  }
-}
-
-export async function submitResults(nightId: string, state: GameState): Promise<string | null> {
+export async function submitResults(nightId: string, token: string, state: GameState): Promise<string | null> {
   try {
     const res = await fetch(`/api/nights/${encodeURIComponent(nightId)}/results`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(resultsPayload(state)),
+      body: JSON.stringify(resultsPayload(state, token)),
     });
     if (res.ok) return null;
     const body = await res.json().catch(() => ({}));

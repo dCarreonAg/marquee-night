@@ -1,5 +1,6 @@
 import {
   BONUS_WAGER_FLOOR,
+  MAX_PLAYER_NAME,
   MAX_TEAMS,
   MAX_UNDO,
   MIN_TEAMS,
@@ -191,17 +192,20 @@ function reduce(s: Snapshot, action: Exclude<Action, { type: "undo" }>, now: num
 
     case "addPlayer": {
       const id = action.player.id.trim();
-      const name = action.player.name.trim().slice(0, 40);
-      if (!id || !name) fail("A player needs an id and a name.");
+      const name = action.player.name.trim().replace(/\s+/g, " ").slice(0, MAX_PLAYER_NAME);
+      if (!id) fail("A player needs an id.");
+      if (!name) fail("Type a name first.");
       const players = s.players ?? [];
-      if (players.some((p) => p.id === id)) {
-        // Rejoining (new phone, refresh): keep their team, refresh the profile.
-        return {
-          ...s,
-          players: players.map((p) => (p.id === id ? { ...p, name, imageUrl: action.player.imageUrl } : p)),
-        };
+      // Names identify people on the season leaderboard, so they're unique in a game.
+      const key = name.toLowerCase();
+      if (players.some((p) => p.id !== id && p.name.toLowerCase() === key)) {
+        fail(`Someone here is already called "${name}". Add an initial?`);
       }
-      const player: Player = { id, name, imageUrl: action.player.imageUrl, teamId: smallestTeam(s) };
+      if (players.some((p) => p.id === id)) {
+        // Rejoining (refresh, new name): keep their team.
+        return { ...s, players: players.map((p) => (p.id === id ? { ...p, name } : p)) };
+      }
+      const player: Player = { id, name, teamId: smallestTeam(s) };
       return { ...s, players: [...players, player] };
     }
 

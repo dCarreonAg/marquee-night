@@ -85,7 +85,13 @@ export function LobbyScreen({ view, act, pending }: ScreenProps) {
               {members.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {members.map((p) => (
-                    <PlayerChip key={p.id} player={p} disabled={pending} onTap={() => move(p)} />
+                    <PlayerChip
+                      key={p.id}
+                      player={p}
+                      disabled={pending}
+                      onTap={() => move(p)}
+                      onRemove={() => act({ type: "removePlayer", playerId: p.id })}
+                    />
                   ))}
                 </div>
               )}
@@ -99,7 +105,13 @@ export function LobbyScreen({ view, act, pending }: ScreenProps) {
           <Eyebrow className="mb-2">Not on a team</Eyebrow>
           <div className="flex flex-wrap gap-1.5">
             {benched.map((p) => (
-              <PlayerChip key={p.id} player={p} disabled={pending} onTap={() => move(p)} />
+              <PlayerChip
+                      key={p.id}
+                      player={p}
+                      disabled={pending}
+                      onTap={() => move(p)}
+                      onRemove={() => act({ type: "removePlayer", playerId: p.id })}
+                    />
             ))}
           </div>
         </div>
@@ -108,7 +120,7 @@ export function LobbyScreen({ view, act, pending }: ScreenProps) {
       <p className="text-[13px] text-text-dim">
         {view.players.length === 0
           ? "Players join by scanning the QR code on the TV."
-          : "Tap a player to move them to the next team."}
+          : "Tap a name to move them to the next team, ✕ to remove them."}
       </p>
 
       <BigButton tone="gold" size="xl" disabled={pending} onClick={() => act({ type: "startGame" })}>
@@ -118,17 +130,38 @@ export function LobbyScreen({ view, act, pending }: ScreenProps) {
   );
 }
 
-function PlayerChip({ player, onTap, disabled }: { player: Player; onTap: () => void; disabled?: boolean }) {
+function PlayerChip({
+  player,
+  onTap,
+  onRemove,
+  disabled,
+}: {
+  player: Player;
+  onTap: () => void;
+  onRemove: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onTap}
-      className="flex h-9 items-center gap-1.5 rounded-full bg-bg px-3 text-[14px] font-semibold ring-1 ring-panel-border active:brightness-125"
-    >
-      {player.name}
-      <span className="text-text-dim">›</span>
-    </button>
+    <span className="flex h-9 items-center rounded-full bg-bg ring-1 ring-panel-border">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onTap}
+        className="flex h-full items-center gap-1.5 rounded-l-full pr-1 pl-3 text-[14px] font-semibold active:brightness-125"
+      >
+        {player.name}
+        <span className="text-text-dim">›</span>
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onRemove}
+        aria-label={`Remove ${player.name}`}
+        className="flex h-full w-8 items-center justify-center rounded-r-full text-[12px] text-text-dim active:text-wrong-soft"
+      >
+        ✕
+      </button>
+    </span>
   );
 }
 

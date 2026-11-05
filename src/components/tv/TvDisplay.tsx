@@ -20,7 +20,6 @@ export function TvDisplay({
   roomCode,
   joinUrl,
   hostUrl,
-  playersJoin = false,
   hostConnected,
   localOnly,
   ranked = false,
@@ -31,8 +30,6 @@ export function TvDisplay({
   roomCode: string;
   joinUrl: string;
   hostUrl: string;
-  /** Players sign in on their phones (the QR is for them, not the host). */
-  playersJoin?: boolean;
   hostConnected: boolean;
   localOnly: boolean;
   ranked?: boolean;
@@ -52,7 +49,6 @@ export function TvDisplay({
           roomCode={roomCode}
           joinUrl={joinUrl}
           hostUrl={hostUrl}
-          playersJoin={playersJoin}
           hostConnected={hostConnected}
           localOnly={localOnly}
           ranked={ranked}

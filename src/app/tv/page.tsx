@@ -6,7 +6,6 @@ import { LocalControls } from "@/components/tv/LocalControls";
 import { Stage } from "@/components/tv/Stage";
 import { TvDisplay } from "@/components/tv/TvDisplay";
 import type { RecordStatus } from "@/components/tv/WinnerScreen";
-import { authEnabled } from "@/lib/auth";
 import { submitResults } from "@/lib/leaderboard";
 import { isLocalOnly } from "@/lib/realtime/room";
 import { useRoomHost } from "@/lib/realtime/useRoomHost";
@@ -22,6 +21,7 @@ export default function TvPage() {
   const muted = !!session?.muted;
   const settings = useMemo(() => ({ muted }), [muted]);
   const nightId = session?.nightId ?? null;
+  const nightToken = session?.nightToken ?? null;
   const { hostConnected } = useRoomHost({
     roomCode: session?.roomCode ?? null,
     nightId,
@@ -31,7 +31,7 @@ export default function TvPage() {
     setMuted,
   });
   const { needsUnlock } = useGameSounds(publicView, muted);
-  const record = useRecordResults(nightId, session?.recorded ?? false, state, markRecorded);
+  const record = useRecordResults(nightId, nightToken, session?.recorded ?? false, state, markRecorded);
 
   if (status === "loading") return <div className="fixed inset-0 bg-bg" />;
 
@@ -52,8 +52,7 @@ export default function TvPage() {
         <TvDisplay
           view={publicView}
           roomCode={session.roomCode}
-          joinUrl={`${origin}/${authEnabled ? "play" : "host"}?room=${session.roomCode}`}
-          playersJoin={authEnabled}
+          joinUrl={`${origin}/play?room=${session.roomCode}`}
           hostUrl={`${origin}/host`}
           hostConnected={hostConnected}
           localOnly={isLocalOnly}
@@ -81,6 +80,7 @@ export default function TvPage() {
 /** Saves a ranked night once the winner is shown, retrying until it sticks. */
 function useRecordResults(
   nightId: string | null,
+  nightToken: string | null,
   recorded: boolean,
   state: ReturnType<typeof useTvGame>["state"],
   markRecorded: () => void,
@@ -93,13 +93,13 @@ function useRecordResults(
   });
 
   useEffect(() => {
-    if (!nightId || recorded || !atWinner) return;
+    if (!nightId || !nightToken || recorded || !atWinner) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const attempt = async () => {
       const current = stateRef.current;
       if (!current) return;
-      const err = await submitResults(nightId, current);
+      const err = await submitResults(nightId, nightToken, current);
       if (cancelled) return;
       if (err) {
         console.error("Could not save the night:", err);
@@ -115,7 +115,7 @@ function useRecordResults(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [nightId, recorded, atWinner, markRecorded]);
+  }, [nightId, nightToken, recorded, atWinner, markRecorded]);
 
   if (!nightId) return "off";
   if (recorded) return "saved";

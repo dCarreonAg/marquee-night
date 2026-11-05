@@ -161,6 +161,15 @@ describe("players and teams", () => {
     expect(s.players![1]).toMatchObject({ name: "Renamed", teamId: "t2" });
   });
 
+  it("refuses a name someone else is using (any case), but lets the same phone rename itself", () => {
+    let s = play(createGameState(plainGame()), { type: "setTeams", teams: [{ name: "A", color: "" }, { name: "B", color: "" }] });
+    s = play(s, join("u1", "Diego"));
+    expect(() => play(s, join("u2", "  diego "))).toThrow(/already called/);
+    s = play(s, join("u1", "Diego C"));
+    expect(s.players).toEqual([{ id: "u1", name: "Diego C", teamId: "t1" }]);
+    expect(() => play(s, join("u3", "   "))).toThrow(/name/);
+  });
+
   it("randomizes evenly and deterministically from the seed", () => {
     let s = play(createGameState(plainGame()), { type: "setTeams", teams: ["A", "B", "C"].map((name) => ({ name, color: "" })) });
     s = play(s, ...["a", "b", "c", "d", "e", "f", "g"].map((id) => join(id)));

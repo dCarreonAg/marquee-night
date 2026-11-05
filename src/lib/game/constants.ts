@@ -15,6 +15,8 @@ export const BONUS_WAGER_FLOOR = 500;
 
 export const MAX_UNDO = 50;
 
+export const MAX_PLAYER_NAME = 24;
+
 /** A team on this many correct answers in a row gets a streak badge. */
 export const STREAK_SHOW = 3;
 /** Every this many in a row pays out a streak bonus. */

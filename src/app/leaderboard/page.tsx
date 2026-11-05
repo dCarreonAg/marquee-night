@@ -1,16 +1,16 @@
-import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { Wordmark } from "@/components/tv/parts";
-import { authEnabled } from "@/lib/auth";
 import { PLACEMENT_POINTS, placeLabel, POINTS_PER_CORRECT } from "@/lib/game";
 import { db, leaderboardConfigured, type LeaderboardRow } from "@/lib/server/db";
 
 export const metadata: Metadata = { title: "Season leaderboard · Marquee Night" };
 
-export default function LeaderboardPage() {
+export default async function LeaderboardPage() {
+  // Render per request: the database keys may only exist at runtime.
+  await connection();
   return (
     <main className="bg-board-glow min-h-screen px-5 py-10 sm:px-8">
       <div className="mx-auto flex max-w-4xl flex-col gap-8">
@@ -18,40 +18,27 @@ export default function LeaderboardPage() {
           <Link href="/" aria-label="Marquee Night home">
             <Wordmark size={48} />
           </Link>
-          {authEnabled && (
-          <Show
-            when="signed-in"
-            fallback={
-              <SignInButton mode="modal">
-                <button className="rounded-xl bg-panel px-4 py-2.5 font-semibold ring-2 ring-panel-border hover:ring-cat-border">
-                  Sign in
-                </button>
-              </SignInButton>
-            }
-          >
-            <UserButton />
-          </Show>
-          )}
         </header>
 
         <div>
           <div className="font-mono text-xs tracking-[0.2em] text-gold">SEASON STANDINGS</div>
           <h1 className="mt-1 font-display text-5xl font-black uppercase tracking-[0.04em]">Power rankings</h1>
           <p className="mt-3 max-w-2xl text-text-muted">
-            Teams are shuffled every night, so points belong to people. Everyone on a team earns its placement points (
+            Teams are shuffled every night, so points belong to people (by the name they type). Everyone on a team earns
+            its placement points (
             {PLACEMENT_POINTS.map((p, i) => `${placeLabel(i + 1)} ${p}`).join(" · ")}) plus {POINTS_PER_CORRECT} per
             correct answer the team made.
           </p>
         </div>
 
-        {leaderboardConfigured && authEnabled ? (
+        {leaderboardConfigured ? (
           <Suspense fallback={<div className="h-64 animate-pulse rounded-2xl bg-panel/60" />}>
             <Standings />
           </Suspense>
         ) : (
           <div className="rounded-2xl border-2 border-gold/40 bg-panel px-6 py-5 text-gold">
-            The season leaderboard isn&apos;t set up on this server yet. It needs the Clerk keys,{" "}
-            <code>SUPABASE_SERVICE_ROLE_KEY</code>, and the migration in <code>supabase/migrations</code> (see the README).
+            The season leaderboard isn&apos;t set up on this server yet. It needs <code>SUPABASE_SERVICE_ROLE_KEY</code>{" "}
+            and the migration in <code>supabase/migrations</code> (see the README).
           </div>
         )}
       </div>
@@ -60,7 +47,6 @@ export default function LeaderboardPage() {
 }
 
 async function Standings() {
-  await connection();
   const [board, nights] = await Promise.all([
     db().from("leaderboard").select("*").order("points", { ascending: false }).order("wins", { ascending: false }).order("correct", { ascending: false }).limit(200),
     db()
@@ -84,8 +70,8 @@ async function Standings() {
     <>
       {rows.length === 0 ? (
         <p className="rounded-2xl bg-panel px-6 py-8 text-center text-text-muted ring-1 ring-panel-border">
-          No ranked nights yet. Sign in on the setup screen before opening the lobby, and have everyone join from their
-          phones.
+          No ranked nights yet. Leave &ldquo;Counts on the season leaderboard&rdquo; on when you set up a game, and have
+          everyone join from their phones.
         </p>
       ) : (
         <ol className="flex flex-col gap-2">
@@ -97,14 +83,9 @@ async function Standings() {
               <span className={`w-9 text-center font-display text-3xl font-black ${ranks[i] <= 3 ? "text-gold" : "text-text-dim"}`}>
                 {ranks[i]}
               </span>
-              {r.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element -- Clerk-hosted avatar
-                <img src={r.image_url} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
-              ) : (
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-cat-bg font-display text-xl font-black uppercase">
-                  {r.name.slice(0, 1)}
-                </span>
-              )}
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-cat-bg font-display text-xl font-black uppercase">
+                {r.name.slice(0, 1)}
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-lg font-semibold">{r.name}</div>
                 <div className="font-mono text-[11px] tracking-[0.12em] text-text-dim">

@@ -28,8 +28,10 @@ export interface RoomEvents {
   ack: { clientId: string; id: string; error: string | null };
   /** player → TV: "send me the player view" (on join, rejoin, wake). */
   playerHello: { clientId: string };
-  /** player → TV: a signed-in player wants in (repeated on reconnect; joining is idempotent). */
-  join: { clientId: string; player: { id: string; name: string; imageUrl?: string } };
+  /** player → TV: wants in with a name (repeated on reconnect; joining is idempotent). */
+  join: { clientId: string; player: { id: string; name: string } };
+  /** TV → player: why a join was refused (e.g. the name is taken), or null once they're in. */
+  joinResult: { clientId: string; error: string | null };
   /** TV → players. `nightId` is set when the night counts toward the season leaderboard. */
   players: { view: PlayerView; nightId: string | null };
 }
@@ -37,7 +39,7 @@ export interface RoomEvents {
 export type RoomEvent = keyof RoomEvents;
 export type LinkStatus = "connecting" | "live" | "offline";
 
-const EVENTS: RoomEvent[] = ["hello", "ping", "action", "settings", "state", "ack", "playerHello", "join", "players"];
+const EVENTS: RoomEvent[] = ["hello", "ping", "action", "settings", "state", "ack", "playerHello", "join", "joinResult", "players"];
 
 export interface RoomLink {
   send<E extends RoomEvent>(event: E, payload: RoomEvents[E]): void;

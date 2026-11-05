@@ -72,8 +72,9 @@ export function useRoomHost({
         latest.current.setMuted(settings.muted);
       }),
       room.on("playerHello", sendPlayers),
-      room.on("join", ({ player }) => {
-        latest.current.dispatch({ type: "addPlayer", player });
+      room.on("join", ({ clientId, player }) => {
+        const error = latest.current.dispatch({ type: "addPlayer", player });
+        room.send("joinResult", { clientId, error });
         // Answer right away too, so a rejoining phone gets the view even if nothing changed.
         sendPlayers();
       }),

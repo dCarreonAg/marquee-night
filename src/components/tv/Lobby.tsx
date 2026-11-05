@@ -11,7 +11,6 @@ export function Lobby({
   roomCode,
   joinUrl,
   hostUrl,
-  playersJoin,
   hostConnected,
   localOnly,
   ranked,
@@ -22,8 +21,6 @@ export function Lobby({
   joinUrl: string;
   /** Where the host goes, shown as text. */
   hostUrl: string;
-  /** false = no accounts: the QR is the host's, like before. */
-  playersJoin: boolean;
   hostConnected: boolean;
   localOnly: boolean;
   /** This night counts toward the season leaderboard. */
@@ -75,9 +72,7 @@ export function Lobby({
                       <PlayerPill key={p.id} player={p} color={t.color} />
                     ))}
                   </AnimatePresence>
-                  {members.length === 0 && playersJoin && (
-                    <span className="text-[20px] text-text-dim">Waiting for players…</span>
-                  )}
+                  {members.length === 0 && <span className="text-[20px] text-text-dim">Waiting for players…</span>}
                 </div>
               </div>
             );
@@ -94,7 +89,7 @@ export function Lobby({
       </div>
 
       <div className="flex w-[520px] shrink-0 flex-col items-center rounded-[20px] border-2 border-panel-border bg-panel px-12 py-12">
-        <Eyebrow tone="text-gold">{playersJoin ? "Players · scan to join" : "Host, scan or enter"}</Eyebrow>
+        <Eyebrow tone="text-gold">Players · scan to join</Eyebrow>
         <div className="mt-6 flex h-[320px] w-[320px] items-center justify-center overflow-hidden rounded-[14px] bg-text">
           {/* eslint-disable-next-line @next/next/no-img-element -- generated data: URI */}
           {qr && <img src={qr} alt={`QR code for ${joinUrl}`} className="h-full w-full" />}
@@ -103,14 +98,10 @@ export function Lobby({
           {roomCode}
         </div>
         <div className="mt-3 font-mono text-[20px] tracking-[0.1em] text-text-dim">{strip(joinUrl)}</div>
-        {playersJoin && (
-          <>
-            <div className="mt-6 h-px w-full bg-panel-border" />
-            <div className="mt-5 text-center text-[20px] text-text-muted">
-              Host: open <span className="font-mono text-text">{strip(hostUrl)}</span>
-            </div>
-          </>
-        )}
+        <div className="mt-6 h-px w-full bg-panel-border" />
+        <div className="mt-5 text-center text-[20px] text-text-muted">
+          Host: open <span className="font-mono text-text">{strip(hostUrl)}</span> and enter the code
+        </div>
         <div
           className={`mt-4 flex items-center gap-3 rounded-full px-6 py-2 font-mono text-[18px] tracking-[0.16em] ${hostConnected ? "bg-correct/15 text-correct-soft" : "bg-bg/60 text-text-dim"}`}
         >
@@ -144,11 +135,8 @@ function PlayerPill({ player, color }: { player: Player; color: string }) {
   );
 }
 
-export function Avatar({ player, size }: { player: Pick<Player, "name" | "imageUrl">; size: number }) {
-  if (player.imageUrl) {
-    // eslint-disable-next-line @next/next/no-img-element -- Clerk-hosted avatar
-    return <img src={player.imageUrl} alt="" width={size} height={size} className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />;
-  }
+/** A player's initial in a circle. */
+export function Avatar({ player, size }: { player: Pick<Player, "name">; size: number }) {
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full bg-cat-bg font-display font-black uppercase text-text-muted"

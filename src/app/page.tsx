@@ -1,7 +1,5 @@
 "use client";
 
-import { Show, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
-import { authEnabled } from "@/lib/auth";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -17,7 +15,7 @@ import {
   validateGame,
   type GameFile,
 } from "@/lib/game";
-import { createNight } from "@/lib/leaderboard";
+import { createNight, leaderboardEnabled } from "@/lib/leaderboard";
 import { listGames, loadGame, type SavedGameMeta } from "@/lib/library";
 import { loadSession, newRoomCode, saveSession, type Session } from "@/lib/session";
 
@@ -50,7 +48,9 @@ function SetupPage() {
   const [teamError, setTeamError] = useState<string | null>(null);
   const [resume, setResume] = useState<Session | null>(null);
   const [busy, setBusy] = useState(false);
-  const [isSignedIn, setSignedIn] = useState(false);
+  /** null = still asking the server whether it has a leaderboard. */
+  const [seasonAvailable, setSeasonAvailable] = useState<boolean | null>(null);
+  const [ranked, setRanked] = useState(true);
   // Set after the leaderboard failed once: the next click plays unranked.
   const [unrankedOk, setUnrankedOk] = useState(false);
 
@@ -59,6 +59,7 @@ function SetupPage() {
       if (s && s.state.phase.kind !== "winner") setResume(s);
     });
     listGames().then(setLibrary);
+    leaderboardEnabled().then(setSeasonAvailable);
   }, []);
 
   const loadSaved = async (id: string) => {
@@ -128,18 +129,18 @@ function SetupPage() {
       });
       setBusy(true);
       const roomCode = newRoomCode();
-      let nightId: string | null = null;
-      if (isSignedIn && !unrankedOk) {
-        const night = await createNight(game.title, roomCode);
-        if ("error" in night) {
+      let night: { id: string; token: string } | null = null;
+      if (seasonAvailable && ranked && !unrankedOk) {
+        const opened = await createNight(game.title, roomCode);
+        if ("error" in opened) {
           setBusy(false);
           setUnrankedOk(true);
-          setTeamError(`${night.error} Click again to play this one unranked.`);
+          setTeamError(`${opened.error} Click again to play this one unranked.`);
           return;
         }
-        nightId = night.id;
+        night = opened;
       }
-      await saveSession({ roomCode, state, nightId, updatedAt: Date.now() });
+      await saveSession({ roomCode, state, nightId: night?.id ?? null, nightToken: night?.token ?? null, updatedAt: Date.now() });
       router.push("/tv");
     } catch (e) {
       setBusy(false);
@@ -153,7 +154,7 @@ function SetupPage() {
         <header className="flex flex-col items-center gap-3 text-center">
           <Wordmark size={72} />
           <p className="text-text-muted">Set up tonight&apos;s game on the screen everyone will watch.</p>
-          {authEnabled && (
+          {seasonAvailable && (
             <Link href="/leaderboard" className="text-sm font-semibold text-gold hover:underline">
               Season leaderboard →
             </Link>
@@ -285,32 +286,24 @@ function SetupPage() {
           {teamError && <p className="mt-3 text-wrong-soft">{teamError}</p>}
         </Section>
 
-        {authEnabled && (
-        <Section step="3" title="Season night">
-          <SignedInWatcher onChange={setSignedIn} />
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-panel px-5 py-4 ring-1 ring-panel-border">
-            <Show
-              when="signed-in"
-              fallback={
-                <>
-                  <p className="text-sm text-text-muted">
-                    Sign in to make tonight count on the leaderboard. Players join by scanning the QR code on the TV and
-                    earn points for where their team finishes.
-                  </p>
-                  <SignInButton mode="modal">
-                    <button className="rounded-xl bg-gold px-5 py-2.5 font-semibold text-bg">Sign in</button>
-                  </SignInButton>
-                </>
-              }
-            >
-              <p className="text-sm text-text-muted">
-                <span className="font-semibold text-correct-soft">Ranked.</span> Tonight counts on the season
-                leaderboard for everyone who joins from their phone. You&apos;re the host of record.
-              </p>
-              <UserButton />
-            </Show>
-          </div>
-        </Section>
+        {seasonAvailable && (
+          <Section step="3" title="Season night">
+            <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl bg-panel px-5 py-4 ring-1 ring-panel-border">
+              <span className="text-sm text-text-muted">
+                <span className={`font-semibold ${ranked ? "text-correct-soft" : "text-text"}`}>
+                  {ranked ? "Counts on the season leaderboard." : "Just for fun tonight."}
+                </span>{" "}
+                Players scan the QR code on the TV and type their name; everyone earns points for where their team
+                finishes.
+              </span>
+              <input
+                type="checkbox"
+                checked={ranked}
+                onChange={(e) => setRanked(e.target.checked)}
+                className="h-6 w-6 shrink-0 accent-[#ffc53d]"
+              />
+            </label>
+          </Section>
         )}
 
         <button
@@ -323,13 +316,6 @@ function SetupPage() {
       </div>
     </main>
   );
-}
-
-/** Reports Clerk's sign-in state (only rendered when accounts are on). */
-function SignedInWatcher({ onChange }: { onChange: (signedIn: boolean) => void }) {
-  const { isSignedIn } = useAuth();
-  useEffect(() => onChange(!!isSignedIn), [isSignedIn, onChange]);
-  return null;
 }
 
 function Section({ step, title, hint, children }: { step: string; title: string; hint?: string; children: React.ReactNode }) {

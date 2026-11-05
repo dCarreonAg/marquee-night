@@ -1,84 +1,105 @@
 import { NextResponse } from "next/server";
 import { finishPlaces, MAX_TEAMS, rankingPoints } from "@/lib/game";
-import { jsonError, requireUser, UUID } from "@/lib/server/api";
+import { jsonError, nameKey, requireLeaderboard, tokenMatches, UUID } from "@/lib/server/api";
 import { db } from "@/lib/server/db";
 
 interface TeamResult {
   name: string;
   score: number;
   correct: number;
-  playerIds: string[];
+  players: string[];
 }
 
-function parseTeams(body: unknown): TeamResult[] | null {
-  const teams = (body as { teams?: unknown })?.teams;
-  if (!Array.isArray(teams) || teams.length < 1 || teams.length > MAX_TEAMS) return null;
-  const out: TeamResult[] = [];
-  for (const t of teams) {
+function parseBody(body: unknown): { token: string; teams: TeamResult[] } | null {
+  const b = body as { token?: unknown; teams?: unknown } | null;
+  if (typeof b?.token !== "string" || !Array.isArray(b.teams) || b.teams.length < 1 || b.teams.length > MAX_TEAMS) {
+    return null;
+  }
+  const teams: TeamResult[] = [];
+  for (const t of b.teams) {
     if (
       typeof t?.name !== "string" ||
       !Number.isInteger(t.score) ||
       !Number.isInteger(t.correct) ||
       t.correct < 0 ||
-      !Array.isArray(t.playerIds) ||
-      !t.playerIds.every((p: unknown) => typeof p === "string")
+      !Array.isArray(t.players) ||
+      t.players.length > 50 ||
+      !t.players.every((p: unknown) => typeof p === "string" && p.trim() !== "")
     ) {
       return null;
     }
-    out.push({ name: t.name.slice(0, 40), score: t.score, correct: t.correct, playerIds: t.playerIds });
+    teams.push({
+      name: t.name.slice(0, 40),
+      score: t.score,
+      correct: t.correct,
+      players: t.players.map((p: string) => p.trim().replace(/\s+/g, " ").slice(0, 24)),
+    });
   }
-  return out;
+  return { token: b.token, teams };
 }
 
 /**
- * The night's host posts the final standings. Points are worked out here, and
- * only players who registered for the night from their own phone get any.
- * A night is scored once; later posts are ignored.
+ * The TV that opened the night posts the final standings, with its secret
+ * token. Points are worked out here. A night is scored once; later posts are
+ * ignored.
  */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const who = await requireUser();
-  if ("response" in who) return who.response;
+  const off = requireLeaderboard();
+  if (off) return off;
   const { id } = await ctx.params;
   if (!UUID.test(id)) return jsonError(404, "No such night.");
 
-  const teams = parseTeams(await request.json().catch(() => null));
-  if (!teams) return jsonError(400, "Those results don't look right.");
+  const body = parseBody(await request.json().catch(() => null));
+  if (!body) return jsonError(400, "Those results don't look right.");
 
   try {
     const { data: night, error: nightError } = await db()
       .from("nights")
-      .select("id, host_id, finalized_at")
+      .select("id, host_token_hash, finalized_at")
       .eq("id", id)
       .maybeSingle();
     if (nightError) throw nightError;
     if (!night) return jsonError(404, "No such night.");
-    if (night.host_id !== who.userId) return jsonError(403, "Only the host who opened this night can post its results.");
+    if (!tokenMatches(body.token, night.host_token_hash)) return jsonError(403, "Only the screen that opened this night can post its results.");
     if (night.finalized_at) return NextResponse.json({ ok: true, alreadySaved: true });
 
-    const { data: joined, error: joinedError } = await db().from("night_players").select("player_id").eq("night_id", id);
-    if (joinedError) throw joinedError;
-    const registered = new Set((joined ?? []).map((r) => r.player_id as string));
+    // One entry per person, even if the same name somehow appears twice.
+    const places = finishPlaces(body.teams);
+    const entries = new Map<string, { name: string; team: TeamResult; place: number }>();
+    body.teams.forEach((team, i) => {
+      for (const name of team.players) {
+        const key = nameKey(name);
+        if (!entries.has(key)) entries.set(key, { name, team, place: places[i] });
+      }
+    });
 
-    const places = finishPlaces(teams);
-    const seen = new Set<string>();
-    const rows = teams.flatMap((t, i) =>
-      t.playerIds
-        .filter((pid) => registered.has(pid) && !seen.has(pid) && seen.add(pid))
-        .map((pid) => ({
+    if (entries.size > 0) {
+      const now = new Date().toISOString();
+      const { data: players, error: playersError } = await db()
+        .from("players")
+        .upsert(
+          [...entries].map(([key, e]) => ({ name: e.name, name_key: key, updated_at: now })),
+          { onConflict: "name_key" },
+        )
+        .select("id, name_key");
+      if (playersError) throw playersError;
+
+      const rows = (players ?? []).map((p) => {
+        const e = entries.get(p.name_key as string)!;
+        return {
           night_id: id,
-          player_id: pid,
-          team_name: t.name,
-          place: places[i],
-          team_score: t.score,
-          correct: t.correct,
-          points: rankingPoints(places[i], t.correct),
-        })),
-    );
-
-    if (rows.length > 0) {
+          player_id: p.id,
+          team_name: e.team.name,
+          place: e.place,
+          team_score: e.team.score,
+          correct: e.team.correct,
+          points: rankingPoints(e.place, e.team.correct),
+        };
+      });
       const { error } = await db().from("night_players").upsert(rows, { onConflict: "night_id,player_id" });
       if (error) throw error;
     }
+
     const { error: finalError } = await db()
       .from("nights")
       .update({ finalized_at: new Date().toISOString() })
@@ -86,7 +107,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       .is("finalized_at", null);
     if (finalError) throw finalError;
 
-    return NextResponse.json({ ok: true, scored: rows.length });
+    return NextResponse.json({ ok: true, scored: entries.size });
   } catch (e) {
     console.error("Saving results failed", e);
     return jsonError(500, "Couldn't save the results.");

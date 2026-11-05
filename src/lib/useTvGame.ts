@@ -45,7 +45,8 @@ export function useTvGame() {
     } catch (e) {
       const message = e instanceof RuleError ? e.message : "Something went wrong.";
       if (!(e instanceof RuleError)) console.error(e);
-      setError(message);
+      // A refused join (name taken) is the player's problem, shown on their phone.
+      if (action.type !== "addPlayer") setError(message);
       return message;
     }
     const next = { ...current, state, updatedAt: Date.now() };

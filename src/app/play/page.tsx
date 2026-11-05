@@ -1,32 +1,43 @@
 "use client";
 
-import { Show, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { PlayerScreen } from "@/components/play/PlayerScreen";
 import { Wordmark } from "@/components/tv/parts";
-import { authEnabled } from "@/lib/auth";
-import { joinNight } from "@/lib/leaderboard";
+import { MAX_PLAYER_NAME } from "@/lib/game";
+import { randomId } from "@/lib/realtime/room";
 import { useRoomPlayer } from "@/lib/realtime/useRoomPlayer";
 
 const CODE_PATTERN = /^[A-Z0-9]{4}$/;
+const ID_KEY = "marquee-night:player-id";
+const NAME_KEY = "marquee-night:player-name";
+
+const subscribeNoop = () => () => {};
+function read(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function write(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
+/** This phone's player id: kept so a refresh rejoins as the same player (same team). */
+function playerId(): string {
+  let id = read(ID_KEY);
+  if (!id) {
+    id = randomId() + randomId();
+    write(ID_KEY, id);
+  }
+  return id;
+}
 
 export default function PlayPage() {
-  if (!authEnabled) {
-    return (
-      <main className="bg-board-glow mx-auto flex min-h-dvh max-w-[480px] flex-col items-center justify-center gap-6 px-6 text-center">
-        <Wordmark size={44} />
-        <p className="text-text-muted">
-          Player accounts aren&apos;t set up on this server, so there&apos;s nothing to join on your phone. The host can
-          still run the game.
-        </p>
-        <Link href="/host" className="font-semibold text-gold underline">
-          I&apos;m the host
-        </Link>
-      </main>
-    );
-  }
   return (
     <Suspense fallback={null}>
       <Play />
@@ -39,52 +50,28 @@ function Play() {
   const router = useRouter();
   const raw = params.get("room")?.toUpperCase() ?? "";
   const room = CODE_PATTERN.test(raw) ? raw : null;
+  const [name, setName] = useState<string | null>(null);
+  // Why the last join was refused (e.g. the name is taken), shown on the name form.
+  const [nameError, setNameError] = useState<string | null>(null);
+  const changeName = useCallback((error: string | null) => {
+    setName(null);
+    setNameError(error);
+  }, []);
 
   return (
     <main className="bg-board-glow mx-auto flex min-h-dvh max-w-[480px] flex-col px-4 pt-[max(12px,env(safe-area-inset-top))] pb-[max(24px,env(safe-area-inset-bottom))]">
-      <header className="mb-5 flex items-center justify-between gap-3 py-2">
+      <header className="mb-5 py-2">
         <Wordmark size={30} />
-        <Show when="signed-in">
-          <UserButton />
-        </Show>
       </header>
 
-      <Show when="signed-out">
-        <SignInPrompt room={room} />
-      </Show>
-      <Show when="signed-in">
-        {room ? (
-          <Joined room={room} onLeave={() => router.replace("/play")} />
-        ) : (
-          <CodeForm onJoin={(code) => router.replace(`/play?room=${code}`)} />
-        )}
-      </Show>
+      {!room ? (
+        <CodeForm onJoin={(code) => router.replace(`/play?room=${code}`)} />
+      ) : name === null ? (
+        <NameForm room={room} error={nameError} onJoin={setName} />
+      ) : (
+        <Joined room={room} name={name} onChangeName={changeName} />
+      )}
     </main>
-  );
-}
-
-function SignInPrompt({ room }: { room: string | null }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
-      {room && <div className="font-mono text-[13px] tracking-[0.2em] text-text-dim">ROOM {room}</div>}
-      <h1 className="font-display text-[44px] font-black uppercase leading-[0.95]">Join the game</h1>
-      <p className="max-w-[320px] text-[16px] text-text-muted">
-        Sign in so your points count on the season leaderboard. Teams get shuffled each night; your ranking follows you.
-      </p>
-      <div className="flex w-full flex-col gap-3">
-        <SignInButton mode="modal">
-          <button className="h-[64px] rounded-[16px] bg-gold font-display text-[24px] font-black uppercase tracking-[0.08em] text-bg">
-            Sign in
-          </button>
-        </SignInButton>
-        <SignUpButton mode="modal">
-          <button className="h-[52px] rounded-[16px] bg-panel font-semibold ring-2 ring-panel-border">Create an account</button>
-        </SignUpButton>
-      </div>
-      <Link href={room ? `/host?room=${room}` : "/host"} className="text-[14px] font-semibold text-text-dim underline">
-        I&apos;m the host
-      </Link>
-    </div>
   );
 }
 
@@ -118,7 +105,7 @@ function CodeForm({ onJoin }: { onJoin: (code: string) => void }) {
         disabled={!valid}
         className="h-[72px] rounded-[16px] bg-gold font-display text-[24px] font-black uppercase tracking-[0.08em] text-bg disabled:opacity-40"
       >
-        Join
+        Next
       </button>
       <Link href="/leaderboard" className="mt-4 text-center text-[14px] font-semibold text-text-dim underline">
         Season leaderboard
@@ -127,42 +114,91 @@ function CodeForm({ onJoin }: { onJoin: (code: string) => void }) {
   );
 }
 
-function Joined({ room, onLeave }: { room: string; onLeave: () => void }) {
-  const { user } = useUser();
-  const identity = useMemo(() => {
-    if (!user) return null;
-    const name =
-      user.fullName?.trim() || user.username?.trim() || user.primaryEmailAddress?.emailAddress.split("@")[0] || "Player";
-    return { id: user.id, name, imageUrl: user.imageUrl };
-  }, [user]);
-  const { status, view, nightId } = useRoomPlayer(room, identity);
-  const [nightError, setNightError] = useState<string | null>(null);
-  const registered = useRef<string | null>(null);
+function NameForm({ room, error, onJoin }: { room: string; error: string | null; onJoin: (name: string) => void }) {
+  const remembered = useSyncExternalStore(subscribeNoop, () => read(NAME_KEY) ?? "", () => "");
+  const [typed, setTyped] = useState<string | null>(null);
+  const value = typed ?? remembered;
+  const clean = value.trim().replace(/\s+/g, " ");
 
-  // Register for the season night once per night, from this signed-in phone.
+  return (
+    <form
+      className="flex flex-1 flex-col justify-center gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!clean) return;
+        write(NAME_KEY, clean);
+        onJoin(clean);
+      }}
+    >
+      <div className="text-center font-mono text-[13px] tracking-[0.2em] text-text-dim">ROOM {room}</div>
+      <label htmlFor="name" className="text-center font-display text-[40px] font-black uppercase leading-none">
+        What&apos;s your name?
+      </label>
+      <input
+        id="name"
+        value={value}
+        onChange={(e) => setTyped(e.target.value.slice(0, MAX_PLAYER_NAME))}
+        autoComplete="nickname"
+        autoCapitalize="words"
+        enterKeyHint="go"
+        placeholder="Your name"
+        className="h-[72px] w-full rounded-[18px] border-[3px] border-gold bg-panel px-5 text-center text-[28px] font-semibold outline-none placeholder:text-text-dim/50"
+      />
+      {error && <p className="text-center text-[15px] font-semibold text-wrong-soft">{error}</p>}
+      <p className="text-center text-[13px] text-text-dim">
+        Use the same name every night: it&apos;s how the season leaderboard knows you.
+      </p>
+      <button
+        type="submit"
+        disabled={!clean}
+        className="h-[72px] rounded-[16px] bg-gold font-display text-[24px] font-black uppercase tracking-[0.08em] text-bg disabled:opacity-40"
+      >
+        Join
+      </button>
+      <Link href={`/host?room=${room}`} className="mt-2 text-center text-[14px] font-semibold text-text-dim underline">
+        I&apos;m the host
+      </Link>
+    </form>
+  );
+}
+
+function Joined({ room, name, onChangeName }: { room: string; name: string; onChangeName: (error: string | null) => void }) {
+  const [id] = useState(playerId);
+  const { status, view, nightId, joinError } = useRoomPlayer(room, { id, name });
+  const inGame = !!view?.players.some((p) => p.id === id);
+  const [wasIn, setWasIn] = useState(false);
+  if (inGame && !wasIn) setWasIn(true);
+
+  // Name refused (taken): back to the name form with the reason.
   useEffect(() => {
-    if (!nightId || registered.current === nightId) return;
-    registered.current = nightId;
-    joinNight(nightId).then((err) => {
-      setNightError(err);
-      if (err) registered.current = null; // try again on the next update
-    });
-  }, [nightId, view]);
+    if (joinError) onChangeName(joinError);
+  }, [joinError, onChangeName]);
 
-  if (!view || !identity) {
+  if (view && inGame) {
+    return <PlayerScreen view={view} me={id} room={room} live={status === "live"} ranked={!!nightId} onChangeName={() => onChangeName(null)} />;
+  }
+
+  if (view && wasIn) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-panel-border border-t-gold" />
-        <div className="text-[18px] font-semibold">Joining room {room}…</div>
-        <p className="max-w-[300px] text-[15px] text-text-muted">
-          {status === "offline" ? "You're offline. Reconnecting…" : "Make sure the game is open on the big screen."}
-        </p>
-        <button type="button" onClick={onLeave} className="h-11 px-4 text-[15px] font-semibold text-text-dim underline">
-          Use a different code
+        <div className="text-[20px] font-semibold">The host took you out of the game.</div>
+        <button type="button" onClick={() => onChangeName(null)} className="h-12 rounded-[14px] bg-gold px-6 font-semibold text-bg">
+          Join again
         </button>
       </div>
     );
   }
 
-  return <PlayerScreen view={view} me={identity.id} room={room} live={status === "live"} ranked={!!nightId} nightError={nightError} />;
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-panel-border border-t-gold" />
+      <div className="text-[18px] font-semibold">Joining room {room} as {name}…</div>
+      <p className="max-w-[300px] text-[15px] text-text-muted">
+        {status === "offline" ? "You're offline. Reconnecting…" : "Make sure the game is open on the big screen."}
+      </p>
+      <button type="button" onClick={() => onChangeName(null)} className="h-11 px-4 text-[15px] font-semibold text-text-dim underline">
+        Change name
+      </button>
+    </div>
+  );
 }
